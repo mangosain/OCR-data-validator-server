@@ -142,60 +142,72 @@ function NameModal({ onSave }) {
   );
 }
 
-// ─── EXPORT FILTER MODAL ──────────────────────────────────────────────────────
-const EXPORT_FILTERS = [
-  { id: "all",         label: "All flagged items",           desc: "Export everything in the flag list" },
-  { id: "corrected",   label: "Flagged + has correction",    desc: "Only flagged items where a correction was typed" },
-  { id: "gt_edited",   label: "Flagged + GT was edited",     desc: "Only flagged items where GT differs from original" },
-  { id: "uncorrected", label: "Flagged + no correction yet", desc: "Items still needing a correction" },
+
+// ─── EXPORT MODAL ─────────────────────────────────────────────────────────────
+const ALL_COLS = [
+  { id: "image",     label: "Image",     desc: "Embedded image preview (XLSX only)" },
+  { id: "path",      label: "Path",      desc: "Full image file path" },
+  { id: "gt",        label: "GT",        desc: "Ground truth text" },
+  { id: "pred",      label: "Pred",      desc: "OCR prediction text" },
+  { id: "corrected", label: "Corrected", desc: "Human correction" },
 ];
 
-function ExportFilterModal({ exportList, corrections, dataset, gtState, onExport, onClose }) {
-  const [filter, setFilter] = useState("all");
-  const counts = useMemo(() => {
-    const keys = Object.keys(exportList);
-    const dm   = Object.fromEntries(dataset.map((d) => [d.id, d]));
-    return {
-      all:         keys.length,
-      corrected:   keys.filter((k) => corrections[k]?.trim()).length,
-      gt_edited:   keys.filter((k) => (gtState[k] ?? dm[k]?.gt ?? "") !== (dm[k]?.gt ?? "")).length,
-      uncorrected: keys.filter((k) => !corrections[k]?.trim()).length,
-    };
-  }, [exportList, corrections, dataset, gtState]);
-
-  const handleExport = () => {
-    let f = { ...exportList };
-    const dm = Object.fromEntries(dataset.map((d) => [d.id, d]));
-    if      (filter === "corrected")   f = Object.fromEntries(Object.entries(f).filter(([k]) => corrections[k]?.trim()));
-    else if (filter === "gt_edited")   f = Object.fromEntries(Object.entries(f).filter(([k]) => (gtState[k] ?? dm[k]?.gt ?? "") !== (dm[k]?.gt ?? "")));
-    else if (filter === "uncorrected") f = Object.fromEntries(Object.entries(f).filter(([k]) => !corrections[k]?.trim()));
-    onExport(f);
-  };
+function ExportModal({ onExport, onClose, itemCount }) {
+  const [cols, setCols] = useState({ image: true, path: true, gt: true, pred: true, corrected: true });
+  const toggle = (id) => setCols((p) => ({ ...p, [id]: !p[id] }));
+  const selectedCols = ALL_COLS.filter((c) => cols[c.id]);
+  const hasAny   = selectedCols.length > 0;
+  const imageOnly = selectedCols.length === 1 && cols.image;
+  // CSV can't embed images — disable CSV if "image" is the only selected column
+  const csvDisabled = !hasAny || imageOnly;
 
   return (
     <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-800">Export Options</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Export</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">{itemCount} flagged item{itemCount !== 1 ? "s" : ""}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded"><X className="w-5 h-5" /></button>
         </div>
-        <div className="space-y-2">
-          {EXPORT_FILTERS.map(({ id, label, desc }) => (
-            <label key={id} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${filter === id ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
-              <input type="radio" name="ef" value={id} checked={filter === id} onChange={() => setFilter(id)} className="mt-0.5 accent-blue-600" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-800">{label}</p>
-                <p className="text-[11px] text-slate-500">{desc}</p>
-              </div>
-              <span className="shrink-0 text-xs font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-lg">{counts[id]}</span>
-            </label>
-          ))}
+
+        {/* Column checkboxes */}
+        <div>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Include columns</p>
+          <div className="space-y-1.5">
+            {ALL_COLS.map(({ id, label, desc }) => (
+              <label key={id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors ${cols[id] ? "border-blue-300 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="checkbox" checked={cols[id]} onChange={() => toggle(id)} className="accent-blue-600 w-3.5 h-3.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-slate-800">{label}</span>
+                  <span className="text-[10px] text-slate-400 ml-2">{desc}</span>
+                </div>
+              </label>
+            ))}
+          </div>
         </div>
-        <button onClick={handleExport} disabled={counts[filter] === 0}
-          className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
-          <Download className="w-4 h-4" />
-          Export {counts[filter]} item{counts[filter] !== 1 ? "s" : ""}
-        </button>
+
+        {/* Format buttons */}
+        <div>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Download as</p>
+          <div className="flex gap-2">
+            <button onClick={() => onExport(cols, "xlsx")} disabled={!hasAny}
+              className="flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 border-blue-600 bg-blue-600 hover:bg-blue-700 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 text-white transition-colors">
+              <Download className="w-4 h-4" />
+              <span className="text-xs font-bold">XLSX</span>
+              <span className="text-[9px] opacity-75">with images</span>
+            </button>
+            <button onClick={() => onExport(cols, "csv")} disabled={csvDisabled}
+              className="flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 border-slate-300 hover:border-slate-400 hover:bg-slate-50 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 text-slate-700 transition-colors">
+              <Download className="w-4 h-4" />
+              <span className="text-xs font-bold">CSV</span>
+              <span className="text-[9px] opacity-75">plain text</span>
+            </button>
+          </div>
+          {cols.image && <p className="text-[10px] text-slate-400 mt-2 text-center">Images are embedded in XLSX only — not available in CSV</p>}
+        </div>
       </div>
     </div>
   );
@@ -286,6 +298,7 @@ export default function UserPanel() {
   const corrSaveTimer    = useRef(null);
   const currentSession   = useRef(null);
   const paginatedDataRef = useRef([]);
+  const autoFillIds      = useRef(new Set()); // IDs filled by auto-fill, not by the user
 
   // User Identity
   const [userName, setUserName] = useState(null);
@@ -305,8 +318,6 @@ export default function UserPanel() {
   const [reconnectBanner, setReconnectBanner] = useState(false);
   const [isExporting,         setIsExporting]         = useState(false);
   const [isImporting,         setIsImporting]         = useState(false);
-  const [showExportDropdown,  setShowExportDropdown]  = useState(false);
-  const exportDropdownRef = useRef(null);
 
   // Position persistence
   const savePosition = (fp, page, mode, grouped) => {
@@ -341,15 +352,6 @@ export default function UserPanel() {
     }
   }, []);
 
-  // Close export dropdown on outside click
-  useEffect(() => {
-    const h = (e) => {
-      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target))
-        setShowExportDropdown(false);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
 
   // ─── DATASET LOADER ───────────────────────────────────────────────────────
   const loadDatasetFromSession = useCallback(async (sess, isReconnect = false) => {
@@ -367,6 +369,7 @@ export default function UserPanel() {
         setDataset([]); setGtState({}); setCorrections({}); setExportList({});
         setLocalGtEdits({}); setImageStatus({}); setLoadedUpTo(0);
         pendingGtSave.current = {}; pendingCorrSave.current = {};
+        autoFillIds.current.clear();
         setUndoStack([]);
         const saved = loadPosition(sess.filePath);
         if (saved) { setCurrentPage(saved.page ?? 0); setViewMode(saved.mode ?? "Word Level"); setGroupByFolder(saved.grouped ?? false); }
@@ -514,6 +517,7 @@ export default function UserPanel() {
           setSession(null); currentSession.current = null;
           setDataset([]); setDatasetFolder(null); setGtState({}); setCorrections({}); setExportList({});
           setImageStatus({}); setLoadedUpTo(0); setCurrentPage(0); setSearchQuery(""); setShowFlaggedOnly(false);
+          autoFillIds.current.clear(); setAutoFill(false);
           break;
         case "gt_update":
           setGtState((prev) => ({ ...prev, [msg.id]: msg.gt }));
@@ -591,6 +595,7 @@ export default function UserPanel() {
   }, [userName]);
 
   const updateCorrection = useCallback((id, val) => {
+    autoFillIds.current.delete(id); // user typed manually — no longer auto-filled
     setCorrections((prev) => ({ ...prev, [id]: val }));
     setUndoStack((s) => [...s.slice(-49), { id, field: "correction", prev: corrections[id] ?? "" }]);
     if (datasetFolder) saveCorrToServer(datasetFolder, id, val);
@@ -634,21 +639,34 @@ export default function UserPanel() {
     }
   }, [exportList, datasetFolder, userName, originalFileName, resolveGt]);
 
-  // ─── AUTO-FILL ────────────────────────────────────────────────────────────
+  // ─── AUTO-FILL TOGGLE ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!autoFill || !paginatedDataRef.current.length) return;
-    const updates = {};
-    paginatedDataRef.current.forEach((item) => {
-      if (corrections[item.id] !== undefined && corrections[item.id] !== "") return;
-      const value = autoFill === "gt" ? resolveGt(item) : item.pred;
-      if (value) updates[item.id] = value;
-    });
-    if (!Object.keys(updates).length) return;
-    setCorrections((prev) => ({ ...prev, ...updates }));
-    if (datasetFolder)
-      fetch("/api/corrections", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: datasetFolder, corrections: updates, editor: userName || "unknown" }) })
-        .catch(console.error);
+    if (autoFill) {
+      // ON: fill only currently-empty corrections; record which IDs we filled
+      const updates = {};
+      paginatedDataRef.current.forEach((item) => {
+        if (corrections[item.id] !== undefined && corrections[item.id] !== "") return;
+        const value = autoFill === "gt" ? resolveGt(item) : item.pred;
+        if (value) { updates[item.id] = value; autoFillIds.current.add(item.id); }
+      });
+      if (!Object.keys(updates).length) return;
+      setCorrections((prev) => ({ ...prev, ...updates }));
+      if (datasetFolder)
+        fetch("/api/corrections", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder: datasetFolder, corrections: updates, editor: userName || "unknown" }) })
+          .catch(console.error);
+    } else {
+      // OFF: clear only the IDs that were auto-filled (not manually edited ones)
+      const toRemove = [...autoFillIds.current];
+      autoFillIds.current.clear();
+      if (!toRemove.length) return;
+      const cleared = Object.fromEntries(toRemove.map((id) => [id, ""]));
+      setCorrections((prev) => ({ ...prev, ...cleared }));
+      if (datasetFolder)
+        fetch("/api/corrections", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder: datasetFolder, corrections: cleared, editor: userName || "unknown" }) })
+          .catch(console.error);
+    }
   }, [autoFill]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── CLEAR DATA ───────────────────────────────────────────────────────────
@@ -721,15 +739,53 @@ export default function UserPanel() {
   useEffect(() => { setCurrentPage(0); }, [searchQuery, showFlaggedOnly]);
 
   // ─── EXPORT ───────────────────────────────────────────────────────────────
-  const doExport = useCallback(async (fel) => {
-    const keys = Object.keys(fel);
+  // cols: { image, path, gt, pred, corrected } — booleans for which columns to include
+  // format: "xlsx" | "csv"
+  const handleExport = useCallback(async (cols, format) => {
+    const keys = Object.keys(exportList);
     if (!keys.length) { fireToast("No items to export", "error", 3000); return; }
+    setShowExportModal(false);
+    const baseName = originalFileName.replace(/\.[^.]+$/, "") || "flagged_errors";
+
+    if (format === "csv") {
+      // Build CSV client-side from selected non-image columns
+      const colIds = ["path", "gt", "pred", "corrected"].filter((c) => cols[c]);
+      const dm = Object.fromEntries(dataset.map((d) => [d.id, d]));
+      const csvQuote = (v) => {
+        const s = String(v ?? "").replace(/"/g, '""');
+        return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s}"` : s;
+      };
+      const header = colIds.map((c) => ({ path: "Path", gt: "GT", pred: "Pred", corrected: "Corrected" }[c])).join(",");
+      const rows = keys.map((id) => {
+        const item = exportList[id];
+        const dm_item = dm[id];
+        return colIds.map((c) => {
+          if (c === "path")      return csvQuote(item?.Path ?? id);
+          if (c === "gt")        return csvQuote(item?.GT ?? dm_item?.gt ?? "");
+          if (c === "pred")      return csvQuote(item?.Pred ?? dm_item?.pred ?? "");
+          if (c === "corrected") return csvQuote(corrections[id] ?? "");
+          return "";
+        }).join(",");
+      });
+      const csv  = [header, ...rows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement("a"), { href: url });
+      a.setAttribute("download", `${baseName}_export.csv`);
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      fireToast(`Exported ${keys.length} rows as CSV ✓`, "success");
+      return;
+    }
+
+    // XLSX via server
     if (!datasetFolder) { fireToast("No dataset loaded", "error", 3000); return; }
-    setIsExporting(true); setShowExportModal(false);
+    setIsExporting(true);
     const tid = fireToast("Exporting…", "saving", 0);
     try {
+      const colsList = Object.entries(cols).filter(([, v]) => v).map(([k]) => k);
       const res = await fetch("/api/export", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: datasetFolder, exportList: fel, corrections, fileName: originalFileName.replace(/\.[^.]+$/, "") || "flagged_errors" }) });
+        body: JSON.stringify({ folder: datasetFolder, exportList, corrections, fileName: baseName, columns: colsList }) });
       dismissToast(tid);
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Server ${res.status}`); }
       const buf  = await res.arrayBuffer();
@@ -738,38 +794,13 @@ export default function UserPanel() {
       const a    = Object.assign(document.createElement("a"), { href: url });
       const cd   = res.headers.get("Content-Disposition") || "";
       const m    = cd.match(/filename="([^"]+)"/);
-      a.setAttribute("download", m ? m[1] : "flagged_errors.xlsx");
+      a.setAttribute("download", m ? m[1] : `${baseName}.xlsx`);
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
       fireToast(`Exported ${keys.length} items ✓`, "success");
     } catch (e) { dismissToast(tid); fireToast("Export failed: " + e.message, "error", 0); }
     finally { setIsExporting(false); }
-  }, [datasetFolder, corrections, originalFileName]);
-
-  const exportToExcel = useCallback(() => {
-    if (!Object.keys(exportList).length) { fireToast("No items selected", "error", 3000); return; }
-    setShowExportModal(true);
-  }, [exportList]);
-
-  // Export CSV: path,corrected — no headers
-  const exportCsv = useCallback(() => {
-    const keys = Object.keys(exportList);
-    if (!keys.length) { fireToast("No items selected", "error", 3000); return; }
-    const rows = keys.map((id) => {
-      const raw  = id.replace(/"/g, '""');
-      const corr = (corrections[id] ?? "").replace(/"/g, '""');
-      const qPath = raw.includes(",")  || raw.includes('"')  || raw.includes("\n")  ? `"${raw}"`  : raw;
-      const qCorr = corr.includes(",") || corr.includes('"') || corr.includes("\n") ? `"${corr}"` : corr;
-      return `${qPath},${qCorr}`;
-    });
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement("a"), { href: url });
-    a.setAttribute("download", `${originalFileName.replace(/\.[^.]+$/, "") || "flagged_errors"}_corrections.csv`);
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    fireToast(`Exported ${keys.length} rows as CSV ✓`, "success");
-  }, [exportList, corrections, originalFileName]);
+  }, [exportList, corrections, datasetFolder, originalFileName, dataset]);
 
   const handleExcelImport = useCallback(async (e) => {
     const file = e.target.files[0]; if (!file) return;
@@ -814,7 +845,7 @@ export default function UserPanel() {
       )}
       {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
       {showExportModal && (
-        <ExportFilterModal exportList={exportList} corrections={corrections} dataset={dataset} gtState={gtState} onExport={doExport} onClose={() => setShowExportModal(false)} />
+        <ExportModal itemCount={Object.keys(exportList).length} onExport={handleExport} onClose={() => setShowExportModal(false)} />
       )}
       <ToastContainer />
 
@@ -1057,53 +1088,15 @@ export default function UserPanel() {
                   <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">{navSubtext}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* Export split-button dropdown */}
-                  <div className="relative" ref={exportDropdownRef}>
-                    <div className="flex rounded-lg overflow-visible border border-blue-600 shadow-sm">
-                      <button
-                        onClick={exportToExcel}
-                        disabled={isExporting}
-                        className={`flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-medium text-sm transition-all ${isExporting ? "cursor-not-allowed" : ""}`}
-                      >
-                        {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                        <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Export"}</span>
-                      </button>
-                      <button
-                        onClick={() => setShowExportDropdown((v) => !v)}
-                        disabled={isExporting}
-                        className="px-2 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-400 text-white border-l border-blue-500 transition-colors"
-                        aria-label="More export options"
-                      >
-                        <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showExportDropdown ? "rotate-90" : ""}`} />
-                      </button>
-                    </div>
-                    {showExportDropdown && (
-                      <div className="absolute top-full mt-1 right-0 w-52 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-50">
-                        <button
-                          onClick={() => { setShowExportDropdown(false); exportToExcel(); }}
-                          disabled={isExporting}
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs hover:bg-slate-50 disabled:opacity-40 transition-colors"
-                        >
-                          <Download className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <div className="text-left">
-                            <p className="font-semibold text-slate-800">Export XLSX</p>
-                            <p className="text-[10px] text-slate-400">Full spreadsheet with images</p>
-                          </div>
-                        </button>
-                        <div className="h-px bg-slate-100" />
-                        <button
-                          onClick={() => { setShowExportDropdown(false); exportCsv(); }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs hover:bg-slate-50 transition-colors"
-                        >
-                          <Download className="w-3.5 h-3.5 text-green-600 shrink-0" />
-                          <div className="text-left">
-                            <p className="font-semibold text-slate-800">Export CSV</p>
-                            <p className="text-[10px] text-slate-400">Path + Corrected, no headers</p>
-                          </div>
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  {/* Export button → opens modal */}
+                  <button
+                    onClick={() => { if (!Object.keys(exportList).length) { fireToast("No items flagged", "error", 3000); return; } setShowExportModal(true); }}
+                    disabled={isExporting}
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-medium text-sm rounded-lg shadow-sm transition-all"
+                  >
+                    {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Export"}</span>
+                  </button>
                   <button onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))} disabled={currentPage >= totalPages - 1}
                     className="flex items-center gap-1 sm:gap-2 px-3 py-2 sm:px-4 rounded-lg font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-colors">
                     <span className="hidden sm:inline">Next</span>

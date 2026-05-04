@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
-  FolderSearch, FolderOpen, X, Loader2, HardDrive, Folder,
-  FileText, ArrowUp, ChevronRight, Users, CheckSquare, Square,
+  FolderSearch, FolderOpen, X, Loader2,
+  FileText, ChevronRight, Users, CheckSquare, Square,
   AlertCircle, RefreshCw, Power, Database, Activity,
   Image as ImageIcon, ChevronLeft, Menu, Download, Search,
   ZoomIn, RotateCcw, Keyboard, Clock,
@@ -103,56 +103,66 @@ function ZoomModal({ item, folder, gt, correction, onClose }) {
   );
 }
 
-// ─── EXPORT FILTER MODAL ──────────────────────────────────────────────────────
-const EXPORT_FILTERS = [
-  { id: "all",         label: "All flagged items",           desc: "Export everything in the flag list" },
-  { id: "corrected",   label: "Flagged + has correction",    desc: "Only flagged items where a correction was typed" },
-  { id: "gt_edited",   label: "Flagged + GT was edited",     desc: "Only flagged items where GT differs from original" },
-  { id: "uncorrected", label: "Flagged + no correction yet", desc: "Items still needing a correction — for QA review" },
+
+// ─── EXPORT MODAL ─────────────────────────────────────────────────────────────
+const ALL_COLS = [
+  { id: "image",     label: "Image",     desc: "Embedded image preview (XLSX only)" },
+  { id: "path",      label: "Path",      desc: "Full image file path" },
+  { id: "gt",        label: "GT",        desc: "Ground truth text" },
+  { id: "pred",      label: "Pred",      desc: "OCR prediction text" },
+  { id: "corrected", label: "Corrected", desc: "Human correction" },
 ];
-function ExportFilterModal({ exportList, corrections, dataset, gtState, onExport, onClose }) {
-  const [filter, setFilter] = useState("all");
-  const counts = useMemo(() => {
-    const keys = Object.keys(exportList);
-    const dataMap = Object.fromEntries(dataset.map((d) => [d.id, d]));
-    return {
-      all:         keys.length,
-      corrected:   keys.filter((k) => corrections[k]?.trim()).length,
-      gt_edited:   keys.filter((k) => { const orig = dataMap[k]?.gt ?? ""; const cur = gtState[k] ?? orig; return cur !== orig; }).length,
-      uncorrected: keys.filter((k) => !corrections[k]?.trim()).length,
-    };
-  }, [exportList, corrections, dataset, gtState]);
-  const handleExport = () => {
-    let filtered = { ...exportList };
-    const dataMap = Object.fromEntries(dataset.map((d) => [d.id, d]));
-    if (filter === "corrected")   filtered = Object.fromEntries(Object.entries(filtered).filter(([k]) => corrections[k]?.trim()));
-    else if (filter === "gt_edited") filtered = Object.fromEntries(Object.entries(filtered).filter(([k]) => { const orig = dataMap[k]?.gt ?? ""; const cur = gtState[k] ?? orig; return cur !== orig; }));
-    else if (filter === "uncorrected") filtered = Object.fromEntries(Object.entries(filtered).filter(([k]) => !corrections[k]?.trim()));
-    onExport(filtered);
-  };
+
+function ExportModal({ onExport, onClose, itemCount }) {
+  const [cols, setCols] = React.useState({ image: true, path: true, gt: true, pred: true, corrected: true });
+  const toggle = (id) => setCols((p) => ({ ...p, [id]: !p[id] }));
+  const selectedCols = ALL_COLS.filter((c) => cols[c.id]);
+  const hasAny   = selectedCols.length > 0;
+  const imageOnly = selectedCols.length === 1 && cols.image;
+  const csvDisabled = !hasAny || imageOnly;
+
   return (
     <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-800">Export Options</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Export</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">{itemCount} flagged item{itemCount !== 1 ? "s" : ""}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded"><X className="w-5 h-5" /></button>
         </div>
-        <div className="space-y-2">
-          {EXPORT_FILTERS.map(({ id, label, desc }) => (
-            <label key={id} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${filter === id ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
-              <input type="radio" name="export-filter" value={id} checked={filter === id} onChange={() => setFilter(id)} className="mt-0.5 accent-blue-600" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-800">{label}</p>
-                <p className="text-[11px] text-slate-500">{desc}</p>
-              </div>
-              <span className="shrink-0 text-xs font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-lg">{counts[id]}</span>
-            </label>
-          ))}
+        <div>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Include columns</p>
+          <div className="space-y-1.5">
+            {ALL_COLS.map(({ id, label, desc }) => (
+              <label key={id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors ${cols[id] ? "border-blue-300 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="checkbox" checked={cols[id]} onChange={() => toggle(id)} className="accent-blue-600 w-3.5 h-3.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-slate-800">{label}</span>
+                  <span className="text-[10px] text-slate-400 ml-2">{desc}</span>
+                </div>
+              </label>
+            ))}
+          </div>
         </div>
-        <button onClick={handleExport} disabled={counts[filter] === 0}
-          className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
-          <Download className="w-4 h-4" /> Export {counts[filter]} item{counts[filter] !== 1 ? "s" : ""}
-        </button>
+        <div>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Download as</p>
+          <div className="flex gap-2">
+            <button onClick={() => onExport(cols, "xlsx")} disabled={!hasAny}
+              className="flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 border-blue-600 bg-blue-600 hover:bg-blue-700 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 text-white transition-colors">
+              <Download className="w-4 h-4" />
+              <span className="text-xs font-bold">XLSX</span>
+              <span className="text-[9px] opacity-75">with images</span>
+            </button>
+            <button onClick={() => onExport(cols, "csv")} disabled={csvDisabled}
+              className="flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 border-slate-300 hover:border-slate-400 hover:bg-slate-50 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 text-slate-700 transition-colors">
+              <Download className="w-4 h-4" />
+              <span className="text-xs font-bold">CSV</span>
+              <span className="text-[9px] opacity-75">plain text</span>
+            </button>
+          </div>
+          {cols.image && <p className="text-[10px] text-slate-400 mt-2 text-center">Images are embedded in XLSX only — not available in CSV</p>}
+        </div>
       </div>
     </div>
   );
@@ -180,120 +190,11 @@ function ShortcutsOverlay({ onClose }) {
   );
 }
 
-// ─── FILE BROWSER ─────────────────────────────────────────────────────────────
-function FileBrowser({ onFileSelected, onClose }) {
-  const [roots,   setRoots]   = useState([]);
-  const [browsing,setBrowsing]= useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState(null);
-
-  useEffect(() => {
-    fetch("/api/fs/roots").then((r) => r.json()).then((d) => setRoots(d.roots || [])).catch(() => setError("Cannot reach filesystem API."));
-  }, []);
-
-  const browseDir = async (p) => {
-    setLoading(true); setError(null);
-    try {
-      const res  = await fetch(`/api/fs/browse?path=${encodeURIComponent(p)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Browse failed");
-      setBrowsing(data);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
-  };
-
-  const extColor = { ".json":"text-purple-600",".tsv":"text-blue-600",".csv":"text-green-600",".txt":"text-slate-600" };
-  const extBg   = { ".json":"bg-purple-50 border-purple-200",".tsv":"bg-blue-50 border-blue-200",".csv":"bg-green-50 border-green-200",".txt":"bg-slate-50 border-slate-200" };
-
-  return (
-    <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
-        <div className="flex items-center gap-2">
-          <FolderSearch className="w-4 h-4 text-blue-600" />
-          <span className="text-sm font-bold text-slate-700">Select Dataset File</span>
-        </div>
-        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded"><X className="w-4 h-4" /></button>
-      </div>
-      {browsing && (
-        <div className="px-3 py-2 bg-blue-50 border-b border-blue-100 flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-mono text-blue-700 truncate flex-1">{browsing.currentPath}</span>
-          {browsing.parentPath && (
-            <button onClick={() => browseDir(browsing.parentPath)} disabled={loading} className="shrink-0 text-blue-600 hover:text-blue-800 disabled:opacity-40 p-1 rounded">
-              <ArrowUp className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      )}
-      {error && <div className="mx-3 mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 shrink-0">⚠ {error}</div>}
-      {!browsing && !error && <p className="text-[11px] text-slate-400 px-4 pt-3 pb-1 shrink-0">Navigate to your dataset folder, then click the exact file to load.</p>}
-      <div className="flex-1 overflow-y-auto">
-        {!browsing && (
-          <div className="p-3 space-y-1">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-2">Available Drives</p>
-            {roots.length === 0 && !error && <div className="flex items-center gap-2 text-slate-400 text-xs py-3 px-1"><Loader2 className="w-3 h-3 animate-spin" /> Detecting drives…</div>}
-            {roots.map((root) => (
-              <button key={root.path} onClick={() => browseDir(root.path)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-100 text-left transition-colors">
-                <HardDrive className="w-4 h-4 text-slate-500 shrink-0" />
-                <span className="text-sm font-medium text-slate-700">{root.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {browsing && (
-          <div className="p-2">
-            {loading && <div className="flex items-center gap-2 text-slate-400 text-xs px-3 py-3"><Loader2 className="w-3 h-3 animate-spin" /> Loading…</div>}
-            {browsing.sourceFiles?.length > 0 && (
-              <div className="mb-3">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-2 py-2">Dataset Files — Click to Load</p>
-                <div className="space-y-1.5">
-                  {browsing.sourceFiles.map((file) => (
-                    <button key={file.path} onClick={() => onFileSelected(file)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all hover:brightness-95 ${extBg[file.ext] || "bg-slate-50 border-slate-200"}`}>
-                      <FileText className={`w-4 h-4 ${extColor[file.ext] || "text-slate-600"} shrink-0`} />
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-bold truncate ${extColor[file.ext] || "text-slate-600"}`}>{file.name}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{file.path}</p>
-                      </div>
-                      <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md ${extColor[file.ext] || "text-slate-600"} bg-white border border-current opacity-60`}>SELECT</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {!loading && browsing.sourceFiles?.length === 0 && browsing.directories?.length > 0 && (
-              <p className="text-[11px] text-slate-400 px-3 pb-2">No dataset files here. Browse into a subfolder.</p>
-            )}
-            {browsing.directories?.length > 0 && (
-              <div>
-                {browsing.sourceFiles?.length > 0 && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 pt-1 pb-1.5">Subfolders</p>}
-                <div className="space-y-0.5">
-                  {browsing.directories.map((dir) => (
-                    <button key={dir.path} onClick={() => browseDir(dir.path)} disabled={loading}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-100 disabled:opacity-40 text-left transition-colors">
-                      <Folder className="w-4 h-4 text-amber-500 shrink-0" />
-                      <span className="text-sm text-slate-700 truncate flex-1">{dir.name}</span>
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {!loading && browsing.directories?.length === 0 && browsing.sourceFiles?.length === 0 && (
-              <p className="text-xs text-slate-400 px-3 py-6 text-center">Empty folder or no supported files.</p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── ADMIN PANEL ──────────────────────────────────────────────────────────────
 export default function AdminPanel() {
   // ── Control state ──
   const [session,        setSession]        = useState(null);
-  const [showBrowser,    setShowBrowser]    = useState(false);
+  const [picking,        setPicking]        = useState(false);
   const [selectedFile,   setSelectedFile]   = useState(null);
   const [loading,        setLoading]        = useState(false);
   const [unloading,      setUnloading]      = useState(false);
@@ -324,7 +225,6 @@ export default function AdminPanel() {
   const [showFlaggedOnly,  setShowFlaggedOnly]  = useState(false);
   const [zoomItem,         setZoomItem]         = useState(null);
   const [showShortcuts,    setShowShortcuts]    = useState(false);
-  const [showExportModal,  setShowExportModal]  = useState(false);
   const [undoStack,        setUndoStack]        = useState([]);
   const [autoFill,         setAutoFill]         = useState(false); // false | "pred" | "gt"
   const [reconnectBanner,  setReconnectBanner]  = useState(false);
@@ -334,6 +234,7 @@ export default function AdminPanel() {
   const gtSaveTimer     = useRef(null);
   const corrSaveTimer   = useRef(null);
   const currentSession  = useRef(null);
+  const autoFillIds     = useRef(new Set()); // IDs filled by auto-fill, not by the user
 
   // ── Position persistence ──
   const savePosition = (filePath, page, mode) => {
@@ -412,6 +313,7 @@ export default function AdminPanel() {
           setDataset([]); setDatasetFolder(null); setGtState({});
           setCorrections({}); setExportList({}); setImageStatus({});
           setLoadedUpTo(0); setCurrentPage(0);
+          autoFillIds.current.clear(); setAutoFill(false);
           setSearchQuery(""); setShowFlaggedOnly(false);
         }
       } catch {}
@@ -438,6 +340,7 @@ export default function AdminPanel() {
         setDataset([]); setGtState({}); setCorrections({}); setExportList({});
         setLocalGtEdits({}); setImageStatus({}); setLoadedUpTo(0);
         pendingGtSave.current = {}; pendingCorrSave.current = {};
+        autoFillIds.current.clear();
         setUndoStack([]);
         const saved = loadPosition(sess.filePath);
         if (saved) { setCurrentPage(saved.page ?? 0); setViewMode(saved.mode ?? "Word Level"); }
@@ -619,6 +522,7 @@ export default function AdminPanel() {
   }, [fetchActivity]);
 
   const updateCorrection = (id, val) => {
+    autoFillIds.current.delete(id); // user typed manually — no longer auto-filled
     const prev = corrections[id] ?? "";
     setCorrections((prev) => ({ ...prev, [id]: val }));
     setUndoStack((s) => [...s.slice(-49), { id, field: "correction", prev }]);
@@ -684,54 +588,53 @@ export default function AdminPanel() {
 
   useEffect(() => { if (session?.folderPath) { fetchStats(session.folderPath); fetchActivity(session.folderPath); } }, [session, fetchStats, fetchActivity]);
 
-  // ── Export dropdown state ──
+  // ── Export state ──
   const [isExporting,      setIsExporting]      = useState(false);
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
-  const exportDropdownRef = useRef(null);
+  const [showExportModal,  setShowExportModal]  = useState(false);
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e) => {
-      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target))
-        setShowExportDropdown(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  // Export CSV: path,corrected — no headers
-  const exportCsv = () => {
+  // cols: { image, path, gt, pred, corrected }, format: "xlsx" | "csv"
+  const handleExport = async (cols, format) => {
     const keys = Object.keys(exportList);
-    if (!keys.length) { fireToast("No flagged items", "error", 3000); return; }
-    setShowExportDropdown(false);
-    const rows = keys.map((id) => {
-      const corrected = (corrections[id] ?? "").replace(/"/g, '""');
-      const path      = id.replace(/"/g, '""');
-      // Quote fields that contain commas, quotes, or newlines
-      const qPath = path.includes(",") || path.includes('"') || path.includes("\n") ? `"${path}"` : path;
-      const qCorr = corrected.includes(",") || corrected.includes('"') || corrected.includes("\n") ? `"${corrected}"` : corrected;
-      return `${qPath},${qCorr}`;
-    });
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement("a"), { href: url });
-    const base = originalFileName.replace(/\.[^.]+$/, "") || "flagged_errors";
-    a.setAttribute("download", `${base}_corrections.csv`);
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    fireToast(`Exported ${keys.length} rows as CSV ✓`, "success");
-  };
+    if (!keys.length) { fireToast("No items to export", "error", 3000); return; }
+    setShowExportModal(false);
+    const baseName = originalFileName.replace(/\.[^.]+$/, "") || "flagged_errors";
 
-  const doExport = async (filteredExportList) => {
-    const keys = Object.keys(filteredExportList);
-    if (!keys.length)   { fireToast("No items to export", "error", 3000); return; }
-    if (!datasetFolder) { fireToast("No dataset folder", "error", 3000);  return; }
-    setIsExporting(true); setShowExportModal(false);
+    if (format === "csv") {
+      const colIds = ["path", "gt", "pred", "corrected"].filter((c) => cols[c]);
+      const csvQuote = (v) => {
+        const s = String(v ?? "").replace(/"/g, '""');
+        return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s}"` : s;
+      };
+      const header = colIds.map((c) => ({ path: "Path", gt: "GT", pred: "Pred", corrected: "Corrected" }[c])).join(",");
+      const rows = keys.map((id) => {
+        const item = exportList[id];
+        return colIds.map((c) => {
+          if (c === "path")      return csvQuote(item?.Path ?? id);
+          if (c === "gt")        return csvQuote(item?.GT ?? "");
+          if (c === "pred")      return csvQuote(item?.Pred ?? "");
+          if (c === "corrected") return csvQuote(corrections[id] ?? "");
+          return "";
+        }).join(",");
+      });
+      const csv  = [header, ...rows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement("a"), { href: url });
+      a.setAttribute("download", `${baseName}_export.csv`);
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      fireToast(`Exported ${keys.length} rows as CSV ✓`, "success");
+      return;
+    }
+
+    // XLSX via server
+    if (!datasetFolder) { fireToast("No dataset folder", "error", 3000); return; }
+    setIsExporting(true);
     const tid = fireToast("Exporting…", "saving", 0);
     try {
+      const colsList = Object.entries(cols).filter(([, v]) => v).map(([k]) => k);
       const res = await fetch("/api/export", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: datasetFolder, exportList: filteredExportList, corrections,
-          fileName: originalFileName.replace(/\.[^.]+$/, "") || "flagged_errors" }) });
+        body: JSON.stringify({ folder: datasetFolder, exportList, corrections, fileName: baseName, columns: colsList }) });
       dismissToast(tid);
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Server ${res.status}`); }
       const savedXlsx = res.headers.get("X-Saved-Xlsx") || "";
@@ -742,23 +645,48 @@ export default function AdminPanel() {
       const a    = Object.assign(document.createElement("a"), { href: url });
       const cd   = res.headers.get("Content-Disposition") || "";
       const match = cd.match(/filename="([^"]+)"/);
-      a.setAttribute("download", match ? match[1] : "flagged_errors.xlsx");
+      a.setAttribute("download", match ? match[1] : `${baseName}.xlsx`);
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
       fireToast(`Exported ${keys.length} items ✓`, "success");
-      if (savedXlsx || savedJson) {
-        setTimeout(() => fireToast(`Saved to server: ${savedXlsx.split(/[\\/]/).pop()}`, "info"), 500);
-      }
+      if (savedXlsx || savedJson) setTimeout(() => fireToast(`Saved to server: ${savedXlsx.split(/[\\/]/).pop()}`, "info"), 500);
     } catch (e) { dismissToast(tid); fireToast("Export failed: " + e.message, "error", 0); }
     finally { setIsExporting(false); }
   };
 
-  const exportToServer = () => {
+  const openExportModal = () => {
     if (!Object.keys(exportList).length) { fireToast("No flagged items", "error", 3000); return; }
     setShowExportModal(true);
   };
 
-  // ── Load selected file ──
+  // ── Open native OS file picker, then immediately load ──
+  const pickAndLoad = async () => {
+    setPicking(true); setError(null);
+    try {
+      const res  = await fetch("/api/fs/pick");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "File picker failed");
+      if (data.cancelled) return; // user dismissed dialog
+      const file = { path: data.path, name: data.name };
+      setSelectedFile(file);
+      // Load immediately without waiting for state to propagate
+      setLoading(true);
+      const dsRes  = await fetch(`/api/dataset?file=${encodeURIComponent(file.path)}`);
+      const dsData = await dsRes.json();
+      if (!dsRes.ok) throw new Error(dsData.error || "Cannot read dataset file");
+      const sesRes  = await fetch("/api/admin/session", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderPath: dsData.folderPath, filePath: dsData.filePath, fileName: dsData.fileName }) });
+      const sesData = await sesRes.json();
+      if (!sesRes.ok) throw new Error(sesData.error || "Failed to set session");
+      setSession(sesData.session);
+      loadDatasetFromSession(sesData.session, false);
+      setSelectedFile(null);
+      fireToast(`Loaded: ${dsData.fileName}`, "success");
+    } catch (e) { setError(e.message); }
+    finally { setPicking(false); setLoading(false); }
+  };
+
+  // ── Load selected file (kept for internal use) ──
   const handleLoad = async () => {
     if (!selectedFile) return;
     setLoading(true); setError(null);
@@ -772,7 +700,7 @@ export default function AdminPanel() {
       if (!sesRes.ok) throw new Error(sesData.error || "Failed to set session");
       setSession(sesData.session);
       loadDatasetFromSession(sesData.session, false);
-      setSelectedFile(null); setShowBrowser(false);
+      setSelectedFile(null);
       fireToast(`Loaded: ${dsData.fileName}`, "success");
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
@@ -798,20 +726,31 @@ export default function AdminPanel() {
   // ── Auto-fill Corrected field ──
   const paginatedDataRef = useRef([]);
   useEffect(() => {
-    if (!autoFill || !paginatedDataRef.current.length) return;
-    const updates = {};
-    paginatedDataRef.current.forEach((item) => {
-      if (corrections[item.id] !== undefined && corrections[item.id] !== "") return;
-      const value = autoFill === "gt" ? resolveGt(item) : item.pred;
-      if (value) updates[item.id] = value;
-    });
-    if (!Object.keys(updates).length) return;
-    setCorrections((prev) => ({ ...prev, ...updates }));
-    if (datasetFolder) {
-      fetch("/api/corrections", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: datasetFolder, corrections: updates, editor: EDITOR_NAME }),
-      }).catch(console.error);
+    if (autoFill) {
+      const updates = {};
+      paginatedDataRef.current.forEach((item) => {
+        if (corrections[item.id] !== undefined && corrections[item.id] !== "") return;
+        const value = autoFill === "gt" ? resolveGt(item) : item.pred;
+        if (value) { updates[item.id] = value; autoFillIds.current.add(item.id); }
+      });
+      if (!Object.keys(updates).length) return;
+      setCorrections((prev) => ({ ...prev, ...updates }));
+      if (datasetFolder)
+        fetch("/api/corrections", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder: datasetFolder, corrections: updates, editor: EDITOR_NAME }),
+        }).catch(console.error);
+    } else {
+      const toRemove = [...autoFillIds.current];
+      autoFillIds.current.clear();
+      if (!toRemove.length) return;
+      const cleared = Object.fromEntries(toRemove.map((id) => [id, ""]));
+      setCorrections((prev) => ({ ...prev, ...cleared }));
+      if (datasetFolder)
+        fetch("/api/corrections", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder: datasetFolder, corrections: cleared, editor: EDITOR_NAME }),
+        }).catch(console.error);
     }
   }, [autoFill]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -890,8 +829,7 @@ export default function AdminPanel() {
       )}
       {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
       {showExportModal && (
-        <ExportFilterModal exportList={exportList} corrections={corrections}
-          dataset={dataset} gtState={gtState} onExport={doExport} onClose={() => setShowExportModal(false)} />
+        <ExportModal itemCount={Object.keys(exportList).length} onExport={handleExport} onClose={() => setShowExportModal(false)} />
       )}
 
       <ToastContainer />
@@ -971,9 +909,9 @@ export default function AdminPanel() {
                     ))}
                   </div>
                   <div className="flex gap-1.5">
-                    <button onClick={() => { setSelectedFile(null); setShowBrowser(true); }}
-                      className="flex-1 text-xs py-1.5 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium rounded-lg flex items-center justify-center gap-1">
-                      <FolderSearch className="w-3 h-3" /> Switch
+                    <button onClick={pickAndLoad} disabled={picking || loading}
+                      className="flex-1 text-xs py-1.5 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium rounded-lg flex items-center justify-center gap-1 disabled:opacity-50">
+                      {picking ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderSearch className="w-3 h-3" />} Switch
                     </button>
                     <button onClick={handleUnload} disabled={unloading}
                       className="flex-1 text-xs py-1.5 px-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 font-medium rounded-lg flex items-center justify-center gap-1 disabled:opacity-50">
@@ -988,9 +926,9 @@ export default function AdminPanel() {
               ) : (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-2">
                   <p className="text-xs text-slate-500">No dataset loaded.</p>
-                  <button onClick={() => { setSelectedFile(null); setShowBrowser(true); }}
-                    className="w-full text-xs py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg flex items-center justify-center gap-1.5">
-                    <FolderSearch className="w-3.5 h-3.5" /> Browse & Load
+                  <button onClick={pickAndLoad} disabled={picking || loading}
+                    className="w-full text-xs py-2 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg flex items-center justify-center gap-1.5">
+                    {picking ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Opening…</> : <><FolderSearch className="w-3.5 h-3.5" /> Browse & Load</>}
                   </button>
                 </div>
               )}
@@ -1096,57 +1034,15 @@ export default function AdminPanel() {
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Export</p>
                   <span className="text-[10px] text-slate-500">{Object.keys(exportList).length} flagged</span>
                 </div>
-                <div className="relative" ref={exportDropdownRef}>
-                  <div className="flex rounded-xl overflow-hidden border border-blue-600">
-                    {/* Main export button */}
-                    <button
-                      onClick={exportToServer}
-                      disabled={isExporting || Object.keys(exportList).length === 0}
-                      className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:border-slate-200 text-white font-semibold transition-colors text-xs"
-                    >
-                      {isExporting
-                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Exporting…</>
-                        : <><Download className="w-3.5 h-3.5" /> Export XLSX</>}
-                    </button>
-                    {/* Dropdown toggle */}
-                    <button
-                      onClick={() => setShowExportDropdown((v) => !v)}
-                      disabled={isExporting || Object.keys(exportList).length === 0}
-                      className="px-2 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-400 text-white border-l border-blue-500 transition-colors"
-                      aria-label="More export options"
-                    >
-                      <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showExportDropdown ? "rotate-90" : ""}`} />
-                    </button>
-                  </div>
-                  {/* Dropdown menu */}
-                  {showExportDropdown && (
-                    <div className="absolute bottom-full mb-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-50">
-                      <button
-                        onClick={() => { setShowExportDropdown(false); exportToServer(); }}
-                        disabled={isExporting || Object.keys(exportList).length === 0}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                        <div className="text-left">
-                          <p className="font-semibold text-slate-800">Export XLSX</p>
-                          <p className="text-[10px] text-slate-400">Full spreadsheet with images</p>
-                        </div>
-                      </button>
-                      <div className="h-px bg-slate-100" />
-                      <button
-                        onClick={exportCsv}
-                        disabled={Object.keys(exportList).length === 0}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5 text-green-600 shrink-0" />
-                        <div className="text-left">
-                          <p className="font-semibold text-slate-800">Export CSV</p>
-                          <p className="text-[10px] text-slate-400">Path + Corrected, no headers</p>
-                        </div>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <button
+                  onClick={openExportModal}
+                  disabled={isExporting || Object.keys(exportList).length === 0}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-xl transition-colors text-xs"
+                >
+                  {isExporting
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Exporting…</>
+                    : <><Download className="w-3.5 h-3.5" /> Export</>}
+                </button>
               </div>
             )}
 
@@ -1177,29 +1073,6 @@ export default function AdminPanel() {
         {/* ── MAIN CONTENT ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-          {/* File browser overlay */}
-          {showBrowser && (
-            <div className="absolute inset-0 z-40 bg-black/30 flex items-center justify-center p-6">
-              <div className="w-full max-w-2xl h-[560px] flex flex-col gap-3">
-                <FileBrowser onFileSelected={(file) => setSelectedFile(file)} onClose={() => { setShowBrowser(false); setSelectedFile(null); }} />
-                {selectedFile && (
-                  <div className="flex items-center gap-3 p-4 bg-white border border-blue-200 rounded-2xl shadow-lg">
-                    <FileText className="w-5 h-5 text-blue-600 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-800 truncate">{selectedFile.name}</p>
-                      <p className="text-[11px] font-mono text-slate-400 truncate">{selectedFile.path}</p>
-                    </div>
-                    <button onClick={() => setSelectedFile(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded"><X className="w-4 h-4" /></button>
-                    <button onClick={handleLoad} disabled={loading}
-                      className="flex items-center gap-2 py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold rounded-xl shadow-sm text-sm">
-                      {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</> : <><Power className="w-4 h-4" /> Load for All</>}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {isLoadingDataset && (
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-3 text-slate-400">
@@ -1213,9 +1086,9 @@ export default function AdminPanel() {
             <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-400">
               <Database className="w-12 h-12 text-slate-200" />
               <p className="text-sm font-medium text-slate-500">No dataset loaded</p>
-              <button onClick={() => { setSelectedFile(null); setShowBrowser(true); }}
-                className="inline-flex items-center gap-2 py-2.5 px-5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-sm text-sm">
-                <FolderSearch className="w-4 h-4" /> Browse & Load Dataset
+              <button onClick={pickAndLoad} disabled={picking || loading}
+                className="inline-flex items-center gap-2 py-2.5 px-5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl shadow-sm text-sm">
+                {picking ? <><Loader2 className="w-4 h-4 animate-spin" /> Opening file picker…</> : <><FolderSearch className="w-4 h-4" /> Browse & Load Dataset</>}
               </button>
             </div>
           )}

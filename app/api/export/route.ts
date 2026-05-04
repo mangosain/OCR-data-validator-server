@@ -66,6 +66,7 @@ interface ExportBody {
   exportList:  Record<string, ExportItem>;
   corrections: Record<string, string>;
   fileName?:   string;               // optional base name, defaults to "flagged_errors"
+  columns?:    string[];             // which columns to include: "image"|"path"|"gt"|"pred"|"corrected"
 }
 
 // ─── POST /api/export ─────────────────────────────────────────────────────────
@@ -79,7 +80,10 @@ interface ExportBody {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ExportBody;
-    const { folder, exportList, corrections, fileName = "flagged_errors" } = body;
+    const { folder, exportList, corrections, fileName = "flagged_errors", columns } = body;
+    // Which columns to include — default to all
+    const ALL = ["image", "path", "gt", "pred", "corrected"];
+    const cols = new Set<string>(columns?.length ? columns : ALL);
 
     if (!folder) return NextResponse.json({ error: "Missing folder" }, { status: 400 });
     const keys = Object.keys(exportList ?? {});
@@ -100,15 +104,17 @@ export async function POST(req: NextRequest) {
     wb.created  = new Date();
     const ws = wb.addWorksheet("Flagged Errors");
 
-    ws.columns = [
-      { header: "Image Preview", key: "preview",   width: 22 },
-      { header: "Image Name",    key: "name",       width: 22 },
-      { header: "GT",            key: "gt",         width: 18 },
-      { header: "Pred",          key: "pred",       width: 18 },
-      { header: "Corrected",     key: "corrected",  width: 22 },
-      { header: "Image Path",    key: "path",       width: 45 },
-      { header: "Source File",   key: "source",     width: 22 },
-    ];
+    // Build column list based on selected columns
+    const wsColumns: Partial<ExcelJS.Column>[] = [];
+    if (cols.has("image"))     wsColumns.push({ header: "Image Preview", key: "preview",  width: 22 });
+    if (cols.has("path"))      wsColumns.push({ header: "Image Path",    key: "path",     width: 45 });
+    if (cols.has("gt"))        wsColumns.push({ header: "GT",            key: "gt",       width: 18 });
+    if (cols.has("pred"))      wsColumns.push({ header: "Pred",          key: "pred",     width: 18 });
+    if (cols.has("corrected")) wsColumns.push({ header: "Corrected",     key: "corrected",width: 22 });
+    ws.columns = wsColumns;
+
+    // Auto-filter span matches actual column count
+    const filterColCount = wsColumns.length;
 
     // Style header row
     ws.getRow(1).font      = { bold: true, size: 11 };
@@ -123,21 +129,19 @@ export async function POST(req: NextRequest) {
       const item      = exportList[id];
       const corrected = corrections[id] ?? "";
 
-      ws.addRow({
-        name:      item.Image,
-        gt:        item.GT,
-        pred:      item.Pred,
-        corrected,
-        path:      item.Path,
-        source:    item.OriginalFile,
-      });
+      const rowData: Record<string, string> = {};
+      if (cols.has("path"))      rowData.path      = item.Path;
+      if (cols.has("gt"))        rowData.gt        = item.GT;
+      if (cols.has("pred"))      rowData.pred       = item.Pred;
+      if (cols.has("corrected")) rowData.corrected  = corrected;
+      ws.addRow(rowData);
 
       const row = ws.getRow(rowIdx);
       row.height    = ROW_HEIGHT;
       row.alignment = { vertical: "middle", wrapText: true };
 
-      // Embed image from disk
-      const imgPath = resolveImagePath(folder, item.Path);
+      // Embed image from disk (only if "image" column selected)
+      const imgPath = cols.has("image") ? resolveImagePath(folder, item.Path) : null;
       if (imgPath) {
         try {
           const buf = fs.readFileSync(imgPath);
@@ -163,7 +167,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Auto-filter on header row
-    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 7 } };
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: filterColCount } };
 
     // Write xlsx to disk
     await wb.xlsx.writeFile(xlsxPath);
